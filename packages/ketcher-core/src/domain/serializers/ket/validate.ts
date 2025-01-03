@@ -14,10 +14,10 @@
  * limitations under the License.
  ***************************************************************************/
 
-import { Validator, Schema } from 'jsonschema';
-import schema from './schema.json';
+import { validate as validateKet } from './validate';
+import {validateMultitailArrows} from "./multitailArrowsValidator";
 
 export function validate(ket: any): boolean {
-  const validator = new Validator();
-  return validator.validate(ket, schema as unknown as Schema).valid;
+  const result = validateKet(ket);
+  return result ? validateMultitailArrows(ket) : result;
 }

@@ -16,6 +16,7 @@
 
 import { Component, useCallback, useState } from 'react';
 
+import Ajv from 'ajv';
 import { ErrorPopover } from './errorPopover';
 import { FormContext } from '../../../../../contexts';
 import Input from '../Input/Input';
@@ -28,7 +29,6 @@ import { updateFormState } from '../../../state/modal/form';
 import { useFormContext } from '../../../../../hooks';
 import { cloneDeep } from 'lodash';
 import { IconButton } from 'components';
-import { Validator } from 'jsonschema';
 
 class Form extends Component {
   constructor(props) {
@@ -359,12 +359,12 @@ const SelectOneOf = (props) => {
 };
 
 function propSchema(schema, { customValid, serialize = {}, deserialize = {} }) {
+  const ajv = new Ajv({ allErrors: true, verbose: true, strictSchema: false });
   const schemaCopy = cloneDeep(schema);
-  Validator.prototype.customFormats = {};
 
   if (customValid) {
     Object.entries(customValid).forEach(([formatName, formatValidator]) => {
-      Validator.prototype.customFormats[formatName] = formatValidator;
+      ajv.addFormat(formatName, formatValidator);
       const {
         /* eslint-disable @typescript-eslint/no-unused-vars */
         pattern,
@@ -381,21 +381,21 @@ function propSchema(schema, { customValid, serialize = {}, deserialize = {} }) {
     });
   }
 
-  const validator = new Validator();
+  const validate = ajv.compile(schemaCopy);
 
   return {
     key: schema.key || '',
     serialize: (inst) => {
-      const result = validator.validate(inst, schemaCopy);
+      validate(inst);
 
       return {
         instance: serializeRewrite(serialize, inst, schemaCopy),
-        valid: result.valid,
-        errors: result.errors,
+        valid: validate(inst),
+        errors: validate.errors || [],
       };
     },
     deserialize: (inst) => {
-      validator.validate(inst, schemaCopy);
+      validate(inst);
       return deserializeRewrite(deserialize, inst);
     },
   };
@@ -419,10 +419,10 @@ function deserializeRewrite(deserializeMap, instance) {
 }
 
 function getInvalidMessage(item) {
-  if (!item.schema.invalidMessage) return item.message;
-  return typeof item.schema.invalidMessage === 'function'
-    ? item.schema.invalidMessage(item.data)
-    : item.schema.invalidMessage;
+  if (!item.parentSchema.invalidMessage) return item.message;
+  return typeof item.parentSchema.invalidMessage === 'function'
+    ? item.parentSchema.invalidMessage(item.data)
+    : item.parentSchema.invalidMessage;
 }
 
 function getErrorsObj(errors) {
@@ -430,7 +430,7 @@ function getErrorsObj(errors) {
   let field;
 
   errors.forEach((item) => {
-    field = item.path[item.path.length - 1];
+    field = item.instancePath.slice(1);
     if (!errs[field]) errs[field] = getInvalidMessage(item);
   });
 
